@@ -23,6 +23,33 @@ export interface ImportResult {
 }
 
 /**
+ * Transform local trace format to API TraceCreateRequest format
+ */
+function transformTraceForAPI(trace: Record<string, unknown>): Record<string, unknown> {
+  return {
+    agent_id: (trace.agent_id as string) || 'unknown',
+    source: (trace.source as string) || 'mcp',
+    session_id: trace.session_id as string | undefined,
+    timestamp: trace.timestamp as string | undefined,
+    trigger: {
+      type: (trace.action_type as string) || 'action',
+      tool_name: trace.tool_name as string | undefined,
+    },
+    action: {
+      type: (trace.action_type as string) || 'action',
+      tool_name: trace.tool_name as string | undefined,
+      input: trace.request_summary as string | undefined,
+    },
+    outcome: {
+      status: trace.blocked ? 'blocked' : 'success',
+      output: trace.response_summary as string | undefined,
+      detections: trace.detection_results as unknown[] | undefined,
+    },
+    policies_checked: trace.policies_checked as unknown[] | undefined,
+  };
+}
+
+/**
  * Redact sensitive data from a trace before cloud sync
  */
 function redactTrace(trace: Record<string, unknown>): Record<string, unknown> {
@@ -79,14 +106,23 @@ export async function importTracesToCloud(options?: ImportOptions): Promise<Impo
     const redactedTraces = traces.map(t => redactTrace(t as unknown as Record<string, unknown>));
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/traces/batch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${credentials.accessToken}`,
-        },
-        body: JSON.stringify({ traces: redactedTraces }),
-      });
+      // Send traces individually to POST /api/v1/traces/
+      let batchSuccess = true;
+      for (const trace of redactedTraces) {
+        const apiTrace = transformTraceForAPI(trace);
+        const traceResponse = await fetch(`${API_BASE_URL}/api/v1/traces/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${credentials.accessToken}`,
+          },
+          body: JSON.stringify(apiTrace),
+        });
+        if (!traceResponse.ok) {
+          batchSuccess = false;
+        }
+      }
+      const response = { ok: batchSuccess, status: batchSuccess ? 200 : 500 } as Response;
 
       if (response.ok) {
         result.imported += traces.length;

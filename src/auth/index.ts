@@ -81,11 +81,16 @@ async function requestDeviceCode(): Promise<DeviceCodeResponse> {
     const response = await fetch(`${API_BASE_URL}/api/v1/cli/device-code`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: 'trustscope-cli',
+        scope: 'traces:write traces:read attestations:write',
+      }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
-      throw new Error('Failed to get device code');
+      const errorBody = await response.text();
+      throw new Error(`Failed to get device code: ${response.status} ${errorBody}`);
     }
 
     return response.json() as Promise<DeviceCodeResponse>;
@@ -117,7 +122,7 @@ async function pollForToken(
       const response = await fetch(`${API_BASE_URL}/api/v1/cli/device-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceCode }),
+        body: JSON.stringify({ device_code: deviceCode }),
         signal: controller.signal,
       });
 
@@ -170,13 +175,19 @@ export async function login(): Promise<void> {
     // Request device code
     const deviceCode = await requestDeviceCode();
 
-    console.log(chalk.bold('Opening browser for authentication...'));
-    console.log(chalk.dim(`Or visit: ${deviceCode.verificationUri}`));
-    console.log(chalk.dim(`Code: ${chalk.bold(deviceCode.userCode)}\n`));
+    // Use verification_uri_complete if available, add signup flow hint for new users
+    let verificationUrl = deviceCode.verification_uri_complete || deviceCode.verification_uri;
+    // Add flow=cli-connect to help frontend route new users to signup
+    const separator = verificationUrl.includes('?') ? '&' : '?';
+    verificationUrl = `${verificationUrl}${separator}flow=cli-connect`;
+
+    console.log(chalk.bold('Opening browser to create account or sign in...'));
+    console.log(chalk.dim(`Or visit: ${verificationUrl}`));
+    console.log(chalk.dim(`Code: ${chalk.bold(deviceCode.user_code)}\n`));
 
     // Open browser
     try {
-      await open(deviceCode.verificationUri);
+      await open(verificationUrl);
     } catch {
       // Browser failed to open, user can use manual URL
     }
@@ -185,9 +196,9 @@ export async function login(): Promise<void> {
 
     // Poll for token
     const credentials = await pollForToken(
-      deviceCode.deviceCode,
+      deviceCode.device_code,
       deviceCode.interval,
-      deviceCode.expiresIn
+      deviceCode.expires_in
     );
 
     // Save credentials
