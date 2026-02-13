@@ -40,6 +40,109 @@ import type {
   GetAttestationInput,
 } from '../types.js';
 
+// PII type to redaction label mapping
+const PII_REDACTION_LABELS: Record<string, string> = {
+  ssn: '[REDACTED-SSN]',
+  ssn_no_dash: '[REDACTED-SSN]',
+  credit_card: '[REDACTED-CC]',
+  credit_card_amex: '[REDACTED-CC]',
+  email: '[REDACTED-EMAIL]',
+  phone_us: '[REDACTED-PHONE]',
+  phone_intl: '[REDACTED-PHONE]',
+  uk_nino: '[REDACTED-NINO]',
+  canada_sin: '[REDACTED-SIN]',
+  india_pan: '[REDACTED-PAN]',
+  brazil_cpf: '[REDACTED-CPF]',
+  iban: '[REDACTED-IBAN]',
+  swift_bic: '[REDACTED-BIC]',
+  aws_access_key: '[REDACTED-KEY]',
+  gcp_api_key: '[REDACTED-KEY]',
+  github_pat: '[REDACTED-TOKEN]',
+  gitlab_pat: '[REDACTED-TOKEN]',
+  npm_token: '[REDACTED-TOKEN]',
+  stripe_secret: '[REDACTED-KEY]',
+  stripe_webhook: '[REDACTED-KEY]',
+  slack_bot_token: '[REDACTED-TOKEN]',
+  sendgrid_key: '[REDACTED-KEY]',
+  rsa_private_key: '[REDACTED-PRIVATE-KEY]',
+  openssh_private_key: '[REDACTED-PRIVATE-KEY]',
+  generic_private_key: '[REDACTED-PRIVATE-KEY]',
+  openai_key: '[REDACTED-KEY]',
+  bearer_token: '[REDACTED-TOKEN]',
+  bank_account: '[REDACTED-ACCOUNT]',
+  routing_number: '[REDACTED-ROUTING]',
+  passport: '[REDACTED-PASSPORT]',
+  jwt: '[REDACTED-JWT]',
+  date_of_birth: '[REDACTED-DOB]',
+  ip_address: '[REDACTED-IP]',
+};
+
+// PII patterns for redaction (subset of main scanner patterns)
+const PII_PATTERNS_FOR_REDACTION: Array<{ name: string; pattern: RegExp }> = [
+  { name: 'ssn', pattern: /\b\d{3}-\d{2}-\d{4}\b/g },
+  { name: 'ssn_no_dash', pattern: /\b\d{3}\s\d{2}\s\d{4}\b/g },
+  { name: 'credit_card', pattern: /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g },
+  { name: 'credit_card_amex', pattern: /\b3[47]\d{2}[\s-]?\d{6}[\s-]?\d{5}\b/g },
+  { name: 'email', pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g },
+  { name: 'phone_us', pattern: /\b\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g },
+  { name: 'phone_intl', pattern: /\+\d{1,3}[\s.-]?\d{3}[\s.-]?\d{3}[\s.-]?\d{4}\b/g },
+  { name: 'uk_nino', pattern: /\b[A-Z]{2}\d{6}[A-Z]\b/g },
+  { name: 'canada_sin', pattern: /\b\d{3}-\d{3}-\d{3}\b/g },
+  { name: 'aws_access_key', pattern: /\bAKIA[0-9A-Z]{16}\b/g },
+  { name: 'github_pat', pattern: /\bghp_[a-zA-Z0-9]{36}\b/g },
+  { name: 'openai_key', pattern: /\bsk-[A-Za-z0-9]{32,}\b/g },
+  { name: 'stripe_secret', pattern: /\bsk_live_[a-zA-Z0-9]{24,}\b/g },
+  { name: 'jwt', pattern: /\beyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/g },
+  { name: 'ip_address', pattern: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g },
+];
+
+/**
+ * Build redacted content by replacing PII matches with labels
+ */
+function buildRedactedContent(content: string, _piiResult: { details?: Record<string, unknown> }): string {
+  // Collect all matches with positions
+  const allMatches: Array<{ start: number; end: number; label: string }> = [];
+
+  for (const { name, pattern } of PII_PATTERNS_FOR_REDACTION) {
+    // Reset regex
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      allMatches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        label: PII_REDACTION_LABELS[name] || '[REDACTED]',
+      });
+    }
+  }
+
+  if (allMatches.length === 0) {
+    return content;
+  }
+
+  // Sort by position (descending) to replace from end to start
+  allMatches.sort((a, b) => b.start - a.start);
+
+  // Remove overlapping matches (keep longer ones)
+  const nonOverlapping: typeof allMatches = [];
+  for (const match of allMatches) {
+    const overlaps = nonOverlapping.some(
+      (existing) => match.start < existing.end && match.end > existing.start
+    );
+    if (!overlaps) {
+      nonOverlapping.push(match);
+    }
+  }
+
+  // Build redacted string
+  let redacted = content;
+  for (const match of nonOverlapping) {
+    redacted = redacted.slice(0, match.start) + match.label + redacted.slice(match.end);
+  }
+
+  return redacted;
+}
+
 /**
  * Local tool executor
  */
@@ -166,6 +269,29 @@ export class LocalToolExecutor {
       const redactionResult = redactToolArgs(tool_args);
       safeArgs = redactionResult.safe_args;
       redactions = redactionResult.redactions;
+    }
+
+    // Build safe_args from content if PII was detected
+    const piiResult = result.results.find((r) => r.engine === 'pii_scanner' && r.triggered);
+    if (piiResult && content) {
+      const piiMatches = piiResult.details?.matches as Array<{
+        type: string;
+        maskedValue: string;
+        confidence: number;
+        tier: string;
+        category: string;
+        start?: number;
+        end?: number;
+      }> | undefined;
+
+      if (piiMatches && piiMatches.length > 0) {
+        // Get full match details from running PII scanner directly to get positions
+        const redactedContent = buildRedactedContent(contentToCheck, piiResult);
+        safeArgs = {
+          ...(safeArgs || {}),
+          content: redactedContent,
+        };
+      }
     }
 
     // Generate guidance
