@@ -69,8 +69,8 @@ export function isLoggedIn(): boolean {
 
 export function getCurrentUser(): { email: string; org: string } | null {
   const creds = getCredentials();
-  if (!creds) return null;
-  return { email: creds.user.email, org: creds.user.org };
+  if (!creds || !creds.user) return null;
+  return { email: creds.user.email || 'unknown', org: creds.user.org || 'unknown' };
 }
 
 async function requestDeviceCode(): Promise<DeviceCodeResponse> {
