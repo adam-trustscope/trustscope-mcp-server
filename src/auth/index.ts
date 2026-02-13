@@ -175,13 +175,12 @@ export async function login(): Promise<void> {
     // Request device code
     const deviceCode = await requestDeviceCode();
 
-    // Use verification_uri_complete if available, add signup flow hint for new users
-    let verificationUrl = deviceCode.verification_uri_complete || deviceCode.verification_uri;
-    // Add flow=cli-connect to help frontend route new users to signup
-    const separator = verificationUrl.includes('?') ? '&' : '?';
-    verificationUrl = `${verificationUrl}${separator}flow=cli-connect`;
+    // Build signup URL with device code - new users go straight to signup
+    // After signup/signin completes, frontend redirects to device auth with the code
+    const baseUrl = API_BASE_URL.replace('api.', 'app.');
+    const verificationUrl = `${baseUrl}/sign-up?redirect_url=/device&code=${deviceCode.user_code}`;
 
-    console.log(chalk.bold('Opening browser to create account or sign in...'));
+    console.log(chalk.bold('Opening browser to create your account...'));
     console.log(chalk.dim(`Or visit: ${verificationUrl}`));
     console.log(chalk.dim(`Code: ${chalk.bold(deviceCode.user_code)}\n`));
 
