@@ -765,7 +765,7 @@ export class LocalToolExecutor {
     // Build claims
     const firstTrace = windowTraces[0];
     const lastTrace = windowTraces[windowTraces.length - 1];
-    const blockedCount = windowTraces.filter((t) => t.blocked === 1).length;
+    const blockedCount = windowTraces.filter((t) => t.blocked).length;
 
     // Verify chain for these traces
     const chainStatus = this.store.verifyChain();
@@ -838,14 +838,13 @@ export class LocalToolExecutor {
     }
 
     // Store attestation
-    this.store.insertAttestation(
-      attestation.id as string,
-      agent_id,
-      start,
-      end,
+    this.store.insertAttestation({
+      agent_id: agent_id || 'unknown',
+      window_start: start,
+      window_end: end,
       claims,
-      (claims.evidence_root as string) || '',
-    );
+      evidence_root: (claims.evidence_root as string) || '',
+    });
 
     return attestation;
   }
