@@ -176,9 +176,9 @@ export async function login(): Promise<void> {
     const deviceCode = await requestDeviceCode();
 
     // Build signup URL with device code - new users go straight to signup
-    // After signup/signin completes, frontend redirects to device auth with the code
+    // After signup completes, frontend redirects to /device with the code
     const baseUrl = API_BASE_URL.replace('api.', 'app.');
-    const verificationUrl = `${baseUrl}/sign-up?redirect_url=/device&code=${deviceCode.user_code}`;
+    const verificationUrl = `${baseUrl}/signup?redirect_url=/device&code=${deviceCode.user_code}`;
 
     console.log(chalk.bold('Opening browser to create your account...'));
     console.log(chalk.dim(`Or visit: ${verificationUrl}`));
