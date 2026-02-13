@@ -7,7 +7,7 @@ When users run `trustscope login`, the CLI opens a browser to the signup page wi
 ## URL Format
 
 ```
-https://app.trustscope.ai/sign-up?redirect_url=/device&code=XXXX-XXXX
+https://app.trustscope.ai/signup?redirect_url=/device&code=XXXX-XXXX
 ```
 
 | Parameter | Description |
@@ -15,39 +15,44 @@ https://app.trustscope.ai/sign-up?redirect_url=/device&code=XXXX-XXXX
 | `redirect_url` | Where to redirect after signup/signin completes (`/device`) |
 | `code` | Device authorization code (e.g., `TFGY-8738`) |
 
-## Frontend Flow
+## Frontend Flow (IMPLEMENTED)
 
-### 1. Sign-Up Page (`/sign-up`)
+### 1. Sign-Up Page (`/signup`)
 
-Read query parameters on mount:
+File: `app/(auth)/signup/[[...sign-up]]/page.tsx`
+
+Reads query parameters on mount and stores in sessionStorage:
 ```typescript
-const searchParams = new URLSearchParams(window.location.search);
-const redirectUrl = searchParams.get('redirect_url');
-const deviceCode = searchParams.get('code');
+const searchParams = useSearchParams();
 
-// Store in session for after auth completes
-if (redirectUrl && deviceCode) {
-  sessionStorage.setItem('cli_redirect', redirectUrl);
-  sessionStorage.setItem('cli_device_code', deviceCode);
-}
+useEffect(() => {
+  const redirectUrl = searchParams.get("redirect_url");
+  const code = searchParams.get("code");
+  if (redirectUrl && code) {
+    sessionStorage.setItem("cli_redirect", redirectUrl);
+    sessionStorage.setItem("cli_device_code", code);
+  }
+}, [searchParams]);
 ```
 
-### 2. After Signup/Signin Completes
+### 2. After Signup Completes
 
-Check for CLI flow and redirect:
+After Clerk auth completes, checks for CLI flow and redirects:
 ```typescript
-// In your auth callback or post-auth handler
-const cliRedirect = sessionStorage.getItem('cli_redirect');
-const cliDeviceCode = sessionStorage.getItem('cli_device_code');
+useEffect(() => {
+  if (isSignedIn) {
+    const cliRedirect = sessionStorage.getItem("cli_redirect");
+    const cliDeviceCode = sessionStorage.getItem("cli_device_code");
 
-if (cliRedirect && cliDeviceCode) {
-  // Clear session storage
-  sessionStorage.removeItem('cli_redirect');
-  sessionStorage.removeItem('cli_device_code');
-
-  // Redirect to device authorization
-  window.location.href = `${cliRedirect}?code=${cliDeviceCode}`;
-}
+    if (cliRedirect && cliDeviceCode) {
+      sessionStorage.removeItem("cli_redirect");
+      sessionStorage.removeItem("cli_device_code");
+      router.push(`${cliRedirect}?code=${cliDeviceCode}`);
+      return;
+    }
+    // ... normal tier redirect flow
+  }
+}, [isSignedIn, router]);
 ```
 
 ### 3. Device Authorization Page (`/device`)
