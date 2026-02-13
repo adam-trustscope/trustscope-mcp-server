@@ -197,8 +197,10 @@ export async function startHybridMode(options: HybridModeOptions): Promise<void>
         tool_name: request.model || 'unknown',
         request_summary: request.prompt?.substring(0, 500),
         response_summary: request.completion?.substring(0, 500),
-        blocked: request.error?.includes('BLOCKED') ? 1 : 0,
-        simulated: 0,
+        blocked: !!request.error?.includes('BLOCKED'),
+        simulated: false,
+        cached: false,
+        original_trace: null,
         risk_weight: 0.5,
       });
 
@@ -224,8 +226,10 @@ export async function startHybridMode(options: HybridModeOptions): Promise<void>
         action_type: 'blocked_request',
         tool_name: request.model || 'unknown',
         request_summary: result.message,
-        blocked: 1,
-        simulated: 0,
+        blocked: true,
+        simulated: false,
+        cached: false,
+        original_trace: null,
         risk_weight: 1.0,
       });
 

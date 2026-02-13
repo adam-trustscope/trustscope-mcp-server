@@ -7,6 +7,7 @@
 
 import { nanoid } from 'nanoid';
 import { EvidenceStore } from '../../evidence/store.js';
+import type { DetectionResultSet, PolicyCheckResult } from '../../types/evidence.js';
 import { PolicyEngine, DEFAULT_POLICY_CONFIGS } from '../../policy/index.js';
 import {
   runAllDetections,
@@ -181,7 +182,7 @@ export class LocalToolExecutor {
     const costEstimate = estimateCost(contentToCheck);
 
     // Log the check as a trace
-    const traceId = this.store.insertTrace({
+    const trace = this.store.insertTrace({
       source: 'mcp',
       agent_id,
       session_id: sessionId,
@@ -189,17 +190,20 @@ export class LocalToolExecutor {
       tool_name: tool_name || action_type,
       request_summary: `Policy check for ${action_type}`,
       response_summary: result.summary,
-      blocked: result.anyBlocked ? 1 : 0,
-      simulated: 0,
-      detection_results: JSON.stringify(result.results),
-      policies_checked: JSON.stringify(
-        result.results.map((r) => r.engine),
-      ),
+      blocked: result.anyBlocked,
+      simulated: false,
+      cached: false,
+      original_trace: null,
+      detection_results: result.results as unknown as DetectionResultSet,
+      policies_checked: result.results.map((r) => ({
+        engine: r.engine,
+        triggered: r.triggered,
+        action: r.action,
+      })) as unknown as PolicyCheckResult[],
       risk_weight: result.anyBlocked ? 1.0 : result.anyTriggered ? 0.5 : 0.0,
     });
 
-    // Get audit hash for evidence
-    const trace = this.store.getTrace(traceId);
+    // trace is already the full Trace object from insertTrace
 
     // Update session state
     this.updateSessionState(sessionId, action_type);
@@ -226,9 +230,9 @@ export class LocalToolExecutor {
       cost_estimate: costEstimate,
       enforcement: detectEnforcementSync(true),
       evidence: {
-        trace_id: traceId,
-        audit_hash: trace?.audit_hash ? `sha256:${trace.audit_hash.substring(0, 16)}...` : undefined,
-        timestamp: trace?.timestamp || new Date().toISOString(),
+        trace_id: trace.id,
+        audit_hash: trace.audit_hash ? `sha256:${trace.audit_hash.substring(0, 16)}...` : undefined,
+        timestamp: trace.timestamp,
       },
     };
   }
@@ -319,7 +323,7 @@ export class LocalToolExecutor {
 
     const sessionId = session_id || `session_${nanoid(8)}`;
 
-    const traceId = this.store.insertTrace({
+    const loggedTrace = this.store.insertTrace({
       source: 'mcp',
       agent_id,
       session_id: sessionId,
@@ -327,9 +331,11 @@ export class LocalToolExecutor {
       tool_name,
       request_summary,
       response_summary,
-      blocked: blocked ? 1 : 0,
-      simulated: simulated ? 1 : 0,
-      original_trace: metadata ? JSON.stringify(metadata) : undefined,
+      blocked: !!blocked,
+      simulated: !!simulated,
+      cached: false,
+      original_trace: metadata ? JSON.stringify(metadata) : null,
+      risk_weight: blocked ? 1.0 : 0.5,
     });
 
     // Update session state
@@ -337,7 +343,7 @@ export class LocalToolExecutor {
 
     return {
       success: true,
-      trace_id: traceId,
+      trace_id: loggedTrace.id,
       message: 'Action logged successfully',
     };
   }
@@ -423,12 +429,16 @@ export class LocalToolExecutor {
     const { approval_id, approved, reason } = input;
 
     // In local mode, log the approval decision as a trace
-    const traceId = this.store.insertTrace({
+    const approvalTrace = this.store.insertTrace({
       source: 'mcp',
       action_type: 'approval_decision',
       request_summary: `Approval ${approval_id}: ${approved ? 'APPROVED' : 'REJECTED'}`,
       response_summary: reason || 'No reason provided',
-      blocked: 0,
+      blocked: false,
+      simulated: false,
+      cached: false,
+      original_trace: null,
+      risk_weight: approved ? 0.3 : 0.7,
     });
 
     return {
@@ -436,7 +446,7 @@ export class LocalToolExecutor {
       approval_id,
       decision: approved ? 'approved' : 'rejected',
       reason,
-      trace_id: traceId,
+      trace_id: approvalTrace.id,
     };
   }
 
