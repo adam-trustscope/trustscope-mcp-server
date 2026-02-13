@@ -212,7 +212,7 @@ export class TrustScopeMCPServer {
     // Log mode to stderr (stdout is for MCP protocol)
     console.error(`[TrustScope] MCP server started (${this.mode} mode)`);
     console.error(`[TrustScope] 11 tools available`);
-    console.error(`[TrustScope] Evidence: ${this.store.getDbPath()}`);
+    console.error(`[TrustScope] Evidence: ${this.store.getPath()}`);
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
