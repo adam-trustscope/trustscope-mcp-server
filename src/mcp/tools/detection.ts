@@ -32,7 +32,7 @@ export async function runDetection(
   const now = new Date().toISOString();
 
   try {
-    const response = await apiClient.post<RunDetectionInput, RunDetectionResult>(
+    const response = await apiClient.post<RunDetectionResult>(
       '/api/v1/mcp/detection',
       input
     );

@@ -31,9 +31,9 @@ export class ApiClient {
     });
   }
 
-  async post<TInput, TOutput>(
+  async post<TOutput>(
     endpoint: string,
-    data: TInput
+    data: unknown
   ): Promise<ApiResponse<TOutput>> {
     try {
       const response = await this.client.post<TOutput>(endpoint, data);

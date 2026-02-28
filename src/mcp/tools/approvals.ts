@@ -66,7 +66,7 @@ export async function createApproval(
   const now = new Date().toISOString();
 
   try {
-    const response = await apiClient.post<CreateApprovalInput, CreateApprovalResult>(
+    const response = await apiClient.post<CreateApprovalResult>(
       '/api/v1/mcp/approvals',
       {
         ...input,

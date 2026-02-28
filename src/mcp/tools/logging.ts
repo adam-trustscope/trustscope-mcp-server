@@ -48,7 +48,7 @@ export async function logAction(
   const now = new Date().toISOString();
 
   try {
-    const response = await apiClient.post<LogActionInput, LogActionResult>(
+    const response = await apiClient.post<LogActionResult>(
       '/api/v1/mcp/log-action',
       input
     );

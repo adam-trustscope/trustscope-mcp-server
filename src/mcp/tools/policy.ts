@@ -40,7 +40,7 @@ export async function policyCheck(
   const now = new Date().toISOString();
 
   try {
-    const response = await apiClient.post<PolicyCheckInput, PolicyCheckResult>(
+    const response = await apiClient.post<PolicyCheckResult>(
       '/api/v1/mcp/policy-check',
       input
     );
